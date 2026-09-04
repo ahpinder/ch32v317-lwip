@@ -1,0 +1,5 @@
+**/*.o
+.temp_code
+*.elf
+*.hex
+*.map
