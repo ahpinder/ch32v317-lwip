@@ -8,13 +8,88 @@
 /* MII/MDI interface select */
 #define PHY_ADDRESS 0x01
 
-#define USE10BASE_T
+#ifndef USE_CH32V317_PHY
+#define USE_CH32V317_PHY 1
+#endif
+
 #ifndef USE10BASE_T
 //    #define USE_GIGA_MAC
 #ifndef USE_GIGA_MAC
 #define USE_FAST_MAC
 //#define USE_RMII
 #endif
+#endif
+
+#define define_O(a, b)                                \
+    GPIO_InitStructure.GPIO_Pin = b;                  \
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz; \
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;   \
+    GPIO_Init(a, &GPIO_InitStructure)
+
+#define define_I(a, b)                                    \
+    GPIO_InitStructure.GPIO_Pin = b;                      \
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;     \
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING; \
+    GPIO_Init(a, &GPIO_InitStructure)
+
+#define GPIO_Output(a, b) \
+    GPIO_InitStructure.GPIO_Pin = b; \
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz; \
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP; \
+    GPIO_Init(a, &GPIO_InitStructure)
+
+#define GPIO_Input(a, b) \
+    GPIO_InitStructure.GPIO_Pin = b; \
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz; \
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING; \
+    GPIO_Init(a, &GPIO_InitStructure)
+
+#if USE_CH32V317_PHY
+static void ETH_SetClock(void) {
+    RCC_PLL3Cmd(DISABLE);
+    RCC_PREDIV2Config(RCC_PREDIV2_Div1);
+    RCC_PLL3Config(RCC_PLL3Mul_12_5);
+    RCC_PLL3Cmd(ENABLE);
+    while (RESET == RCC_GetFlagStatus(RCC_FLAG_PLL3RDY)) {
+        Delay_Us(10);
+    }
+    Delay_Us(300);
+}
+
+static void ETH_RMIIPinInit(void) {
+    GPIO_InitTypeDef GPIO_InitStructure;
+
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOD | RCC_APB2Periph_GPIOE | RCC_APB2Periph_AFIO,
+                           ENABLE);
+    GPIO_ETH_MediaInterfaceConfig(GPIO_ETH_MediaInterface_RMII);
+
+    GPIO_Output(GPIOD, GPIO_Pin_8);  /* MDIO */
+    GPIO_Output(GPIOE, GPIO_Pin_15); /* MDC */
+
+    GPIO_Output(GPIOE, GPIO_Pin_8);  /* TXEN */
+    GPIO_Output(GPIOE, GPIO_Pin_11); /* TXD0 */
+    GPIO_Output(GPIOE, GPIO_Pin_10); /* TXD1 */
+
+    GPIO_Output(GPIOE, GPIO_Pin_12); /* REFCLK */
+    GPIO_Input(GPIOE, GPIO_Pin_9);   /* CRSDV */
+    GPIO_Input(GPIOE, GPIO_Pin_14);  /* RXD0 */
+    GPIO_Input(GPIOE, GPIO_Pin_13);  /* RXD1 */
+}
+
+static void PHY_FuncInit(void) {
+    uint16_t regval;
+
+    ETH_WritePHYRegister(PHY_ADDRESS, 0x1F, 0x00);
+    regval = ETH_ReadPHYRegister(PHY_ADDRESS, 28);
+    regval |= (1u << 13);
+    ETH_WritePHYRegister(PHY_ADDRESS, 28, regval);
+
+    ETH_WritePHYRegister(PHY_ADDRESS, 0x1F, 0x07);
+    regval = ETH_ReadPHYRegister(PHY_ADDRESS, 16);
+    regval &= ~(0xFFu << 4);
+    regval |= (0x23u << 4);
+    ETH_WritePHYRegister(PHY_ADDRESS, 16, regval);
+}
 #endif
 
 __attribute__((aligned(4))) ETH_DMADESCTypeDef DMARxDscrTab[ETH_RXBUFNB]; /* 接收描述符表 */
@@ -35,18 +110,6 @@ __attribute__((aligned(4))) uint8_t Tx_Buff[ETH_TXBUFNB][ETH_MAX_PACKET_SIZE]; /
 
 #define ETH_DMARxDesc_FrameLengthShift 16
 
-#define define_O(a, b)                                \
-    GPIO_InitStructure.GPIO_Pin = b;                  \
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz; \
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;   \
-    GPIO_Init(a, &GPIO_InitStructure)
-
-#define define_I(a, b)                                    \
-    GPIO_InitStructure.GPIO_Pin = b;                      \
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;     \
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING; \
-    GPIO_Init(a, &GPIO_InitStructure)
-
 void Ethernet_LED_LINKSET(uint8_t setbit) {
     if (setbit) {
         GPIO_SetBits(GPIOB, GPIO_Pin_8);
@@ -65,6 +128,27 @@ void Ethernet_LED_DATASET(uint8_t setbit) {
 
 void init_phy(void) {
     GPIO_InitTypeDef GPIO = {0};
+
+#if USE_CH32V317_PHY
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
+    RCC_AHBPeriphClockCmd(
+        RCC_AHBPeriph_ETH_MAC | RCC_AHBPeriph_ETH_MAC_Tx | RCC_AHBPeriph_ETH_MAC_Rx, ENABLE);
+
+    /* Ethernet LED Configuration */
+    GPIO.GPIO_Pin = GPIO_Pin_8 | GPIO_Pin_9;
+    GPIO.GPIO_Mode = GPIO_Mode_Out_PP;
+    GPIO.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOB, &GPIO);
+
+    Ethernet_LED_LINKSET(1);
+    Ethernet_LED_DATASET(1);
+
+    /* Enable internal 100M PHY path and RMII pins for CH32V317 */
+    // EXTEN->EXTEN_CTR |= EXTEN_ETH_10M_EN;
+    ETH_RMIIPinInit();
+    ETH_SetClock();
+#else
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
 
     GPIO.GPIO_Pin = GPIO_Pin_8;
@@ -129,6 +213,7 @@ void init_phy(void) {
     /*  Enable MII or RMII GPIO */
     FETH_pin_init();
 #endif
+#endif
 
     /* Reset ETHERNET on AHB Bus */
     ETH_DeInit();
@@ -156,8 +241,10 @@ void init_phy(void) {
     ETH_StructInit(&ETH_InitStructure);
     /* Fill ETH_InitStructure parametrs */
     /*------------------------   MAC   -----------------------------------*/
+    /* CH32V317 internal PHY is 100M-class; do not force the older 1G/10M-only
+     * assumptions from the external-phy example. */
     ETH_InitStructure.ETH_Mode = ETH_Mode_FullDuplex;
-    ETH_InitStructure.ETH_Speed = ETH_Speed_1000M;
+    ETH_InitStructure.ETH_Speed = ETH_Speed_100M;
     ETH_InitStructure.ETH_AutoNegotiation = ETH_AutoNegotiation_Enable;
     ETH_InitStructure.ETH_LoopbackMode = ETH_LoopbackMode_Disable;
     ETH_InitStructure.ETH_RetryTransmission = ETH_RetryTransmission_Disable;
@@ -253,21 +340,28 @@ void init_phy(void) {
         Delay_Ms(1000);
     }
 
-    RegValue = ETH_ReadPHYRegister(PHY_ADDRESS, 0x10);
-    printf("PHY_SR value:%04x. \r\n", RegValue);
+    RegValue = ETH_ReadPHYRegister(PHY_ADDRESS, PHY_STATUS);
+    printf("PHY_STATUS value:%04x. \r\n", RegValue);
 
-    if (RegValue & (1 << 2)) {
+    if (RegValue & (1u << 2)) {
         ETH_InitStructure.ETH_Mode = ETH_Mode_FullDuplex;
         printf("Full Duplex. \r\n");
     } else {
         ETH_InitStructure.ETH_Mode = ETH_Mode_HalfDuplex;
         printf("Half Duplex. \r\n");
     }
-    ETH_InitStructure.ETH_Speed = ETH_Speed_10M;
-    if (RegValue & (1 << 3)) {
-        printf("Loopback_10M \r\n");
+
+    if (RegValue & (1u << 3)) {
+        ETH_InitStructure.ETH_Speed = ETH_Speed_100M;
+        printf("100M link negotiated. \r\n");
     } else {
+        ETH_InitStructure.ETH_Speed = ETH_Speed_10M;
+        printf("10M link negotiated. \r\n");
     }
+
+#if USE_CH32V317_PHY
+    PHY_FuncInit();
+#endif
 
     Delay_Ms(10);
 
