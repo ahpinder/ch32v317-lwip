@@ -533,7 +533,7 @@ FrameTypeDef ETH_RxPkt_ChainMode(void) {
             /* Resume DMA reception */
             ETH->DMARPDR = 0;
         }
-        printf("Error:ETH_DMARxDesc_OWN.\r\n");
+        // printf("Error:ETH_DMARxDesc_OWN.\r\n");
         /* Return error: OWN bit set */
         return frame;
     }
@@ -552,7 +552,10 @@ FrameTypeDef ETH_RxPkt_ChainMode(void) {
         framelength = ETH_ERROR;
         printf("Error:recv error frame,status:0x%08x.\r\n", DMARxDescToGet->Status);
     }
-    DMARxDescToGet->Status |= ETH_DMARxDesc_OWN;
+    /* Re-arm the descriptor by resetting the full status word. A plain OR would leave stale
+     * frame status bits behind and the DMA would see the descriptor as not cleanly returned.
+     */
+    DMARxDescToGet->Status = ETH_DMARxDesc_OWN;
     frame.length = framelength;
     frame.descriptor = DMARxDescToGet;
 
