@@ -339,7 +339,25 @@ void init_phy(void) {
 
         Delay_Ms(1000);
     }
+    #if USE_CH32V317_PHY
+    RegValue = ETH_ReadPHYRegister(PHY_ADDRESS, PHY_BCR);
+    printf("PHY_BCR value:%04x. \r\n", RegValue);
 
+    if (RegValue & (1u << 13)) { // 100M
+        ETH_InitStructure.ETH_Speed = ETH_Speed_100M;
+        printf("100M link negotiated. \r\n");
+    } else {
+        ETH_InitStructure.ETH_Speed = ETH_Speed_10M;
+        printf("10M link negotiated. \r\n");
+    }
+    if(RegValue & (1u << 8)) { // Full Duplex
+        ETH_InitStructure.ETH_Mode = ETH_Mode_FullDuplex;
+        printf("Full Duplex. \r\n");
+    } else {
+        ETH_InitStructure.ETH_Mode = ETH_Mode_HalfDuplex;
+        printf("Half Duplex. \r\n");
+    }
+    #else
     RegValue = ETH_ReadPHYRegister(PHY_ADDRESS, PHY_STATUS);
     printf("PHY_STATUS value:%04x. \r\n", RegValue);
 
@@ -358,7 +376,7 @@ void init_phy(void) {
         ETH_InitStructure.ETH_Speed = ETH_Speed_10M;
         printf("10M link negotiated. \r\n");
     }
-
+    #endif
 #if USE_CH32V317_PHY
     PHY_FuncInit();
 #endif
