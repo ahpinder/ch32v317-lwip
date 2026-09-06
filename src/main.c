@@ -25,8 +25,9 @@
 
 #include "lwip/init.h"
 #include "lwip/timeouts.h"
-#include "lwip/dhcp.h"
-#include "lwip/apps/httpd.h"
+#include "lwip/netif.h"
+#include "lwip/udp.h"
+#include "lwip/ip_addr.h"
 
 #include "ethernetif.h"
 
@@ -34,6 +35,28 @@
 /* Global typedef */
 
 /* Global define */
+#define UDP_SERVER_PORT 3000
+#define UDP_ACK_STRING "ACK"
+
+static struct udp_pcb *udp_server_pcb = NULL;
+
+static void udp_server_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p,
+                            const ip_addr_t *addr, u16_t port)
+{
+    // printf("received %d bytes from %s:%d\r\n", p->len, ipaddr_ntoa(addr), port);
+    if (p == NULL) {
+        return;
+    }
+
+    struct pbuf *tx_buf = pbuf_alloc(PBUF_TRANSPORT, sizeof(UDP_ACK_STRING) - 1, PBUF_RAM);
+    if (tx_buf != NULL) {
+        memcpy(tx_buf->payload, UDP_ACK_STRING, sizeof(UDP_ACK_STRING) - 1);
+        udp_sendto(pcb, tx_buf, addr, port);
+        pbuf_free(tx_buf);
+    }
+
+    pbuf_free(p);
+}
 
 
 void RS485_Init(void) {
@@ -50,20 +73,37 @@ struct netif lwip_netif;
 
 void LwIP_Init(void)
 {
+    ip4_addr_t ipaddr, netmask, gw;
+
     RCC_AHBPeriphClockCmd(RCC_AHBPeriph_RNG, ENABLE);
     RNG_Cmd(ENABLE);
 
     lwip_init();
-    netif_add(&lwip_netif, NULL, NULL, NULL, NULL, &ethernetif_init, netif_input);
-    netif_set_default(&lwip_netif);
 
-    /* When the netif is fully configured this function must be called */
+    IP4_ADDR(&ipaddr, 192, 168, 42, 10);
+    IP4_ADDR(&netmask, 255, 255, 255, 0);
+    IP4_ADDR(&gw, 192, 168, 42, 1);
+
+    netif_add(&lwip_netif, &ipaddr, &netmask, &gw, NULL, &ethernetif_init, netif_input);
+    netif_set_default(&lwip_netif);
     netif_set_up(&lwip_netif);
 
-    dhcp_start(&lwip_netif);
-    httpd_init();
-
-    printf("Initialized LwIP \r\n");
+    udp_server_pcb = udp_new();
+    if (udp_server_pcb != NULL) {
+        err_t err = udp_bind(udp_server_pcb, IP_ADDR_ANY, UDP_SERVER_PORT);
+        if (err == ERR_OK) {
+            udp_recv(udp_server_pcb, udp_server_recv, NULL);
+            printf("Initialized static UDP server on %d.%d.%d.%d:%d\r\n",
+                   ip4_addr1(&ipaddr), ip4_addr2(&ipaddr), ip4_addr3(&ipaddr), ip4_addr4(&ipaddr),
+                   UDP_SERVER_PORT);
+        } else {
+            printf("UDP bind failed: %d\r\n", err);
+            udp_remove(udp_server_pcb);
+            udp_server_pcb = NULL;
+        }
+    } else {
+        printf("UDP PCB allocation failed\r\n");
+    }
 }
 
 
@@ -104,6 +144,7 @@ int main(void)
     LwIP_Init();
     while(1) {
         if (eth_rx_pending) {
+            // printf("ETH packet received\r\n");
             while (ethernetif_poll(&lwip_netif)) {
             }
             eth_rx_pending = 0;
