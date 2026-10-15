@@ -251,7 +251,7 @@ void init_phy(void) {
     ETH_InitStructure.ETH_AutomaticPadCRCStrip = ETH_AutomaticPadCRCStrip_Disable;
     ETH_InitStructure.ETH_ReceiveAll = ETH_ReceiveAll_Enable;
     ETH_InitStructure.ETH_BroadcastFramesReception = ETH_BroadcastFramesReception_Enable;
-    ETH_InitStructure.ETH_PromiscuousMode = ETH_PromiscuousMode_Enable;
+    ETH_InitStructure.ETH_PromiscuousMode = ETH_PromiscuousMode_Disable;
     ETH_InitStructure.ETH_MulticastFramesFilter = ETH_MulticastFramesFilter_Perfect;
     ETH_InitStructure.ETH_UnicastFramesFilter = ETH_UnicastFramesFilter_Perfect;
 #ifdef CHECKSUM_BY_HARDWARE
@@ -537,6 +537,7 @@ FrameTypeDef ETH_RxPkt_ChainMode(void) {
         /* Return error: OWN bit set */
         return frame;
     }
+    // printf("DMARxDescToGet->Status: 0x%08x\r\n", DMARxDescToGet->Status);
 
     if (((DMARxDescToGet->Status & ETH_DMARxDesc_ES) == (u32)RESET) &&
         ((DMARxDescToGet->Status & ETH_DMARxDesc_LS) != (u32)RESET) &&
@@ -566,6 +567,23 @@ FrameTypeDef ETH_RxPkt_ChainMode(void) {
     /* Return Frame */
     return (frame);
 }
+
+// uint32_t ETH_PeekRx_ChainMode(void) {
+//     uint32_t framelength = 0;
+//     /* Check if the descriptor is owned by the ETHERNET DMA (when set) or CPU (when reset) */
+//     if ((DMARxDescToGet->Status & ETH_DMARxDesc_OWN) != (u32)RESET) {
+//         frame.length = ETH_ERROR;
+//         if ((ETH->DMASR & ETH_DMASR_RBUS) != (u32)RESET) {
+//             /* Clear RBUS ETHERNET DMA flag */
+//             ETH->DMASR = ETH_DMASR_RBUS;
+//             /* Resume DMA reception */
+//             ETH->DMARPDR = 0;
+//         }
+//         // printf("Error:ETH_DMARxDesc_OWN.\r\n");
+//         /* Return error: OWN bit set */
+//         return frame;
+//     }
+// }
 
 /*********************************************************************
  * @fn      ETH_TxPkt_ChainMode

@@ -11,6 +11,7 @@
 *******************************************************************************/
 #include "main.h"
 #include "ch32v30x_it.h"
+#include "ch32v30x.h"
 
 void ethISR(void)
 {
@@ -66,6 +67,46 @@ void EXTI9_5_IRQHandler(void)
     printf("exti95\r\n");
     EXTI_ClearITPendingBit(EXTI_Line7);     /* Clear Flag */
 }
+
+/*********************************************************************
+ * @fn      DMA1_Channel4_IRQHandler
+ *
+ * @brief   uart1 dma tx completion interrupt.
+ *
+ * @return  none
+ */
+void DMA1_Channel4_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
+void DMA1_Channel4_IRQHandler(void)
+{
+
+    if(DMA_GetITStatus(DMA1_IT_TC4))
+    {
+    	// /* disable uart tx dma */
+        // DMA_Cmd(DMA1_Channel4,DISABLE);
+        // DMA_ClearITPendingBit(DMA1_IT_TC4);
+        RS485_DMA_TC_Callback(USART1, 0);
+    }
+
+}
+
+void USART1_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
+void USART1_IRQHandler(void)
+{
+    debug_int_flag = 2;
+    if(USART_GetITStatus(USART1, USART_IT_IDLE) != RESET)
+    {
+        // USART_ReceiveData(USART1); // clear IDLE flag
+        // debug_int_flag = 1;
+        RS485_USART_IDLE_Callback(&buffers, USART1, 0);
+    }
+    else if (USART_GetITStatus(USART1, USART_IT_TC) != RESET)
+    {
+        // USART_ClearITPendingBit(USART1, USART_IT_TC);
+        // debug_int_flag = 3;
+        RS485_USART_TC_Callback(&buffers, USART1, 0);
+    }
+}
+
 
 // /*********************************************************************
 //  * @fn      ETH_IRQHandler
